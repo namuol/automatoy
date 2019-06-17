@@ -1,0 +1,2 @@
+# automatoy
+Created with CodeSandbox
