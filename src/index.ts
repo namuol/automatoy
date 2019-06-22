@@ -1,4 +1,6 @@
 import shuffle from 'lodash.shuffle';
+import { makeRuleMaker } from './makeRuleMaker';
+
 const ROW_COUNT = 30;
 const COL_COUNT = 30;
 
@@ -19,7 +21,7 @@ const STALK_3 = '3';
 const STALK_2 = '2';
 const STALK_1 = '|';
 const STALK_1_HORIZ = '_';
-const STALK_1_LEFT = '\\';
+const STALK_1_$E = '\\';
 const STALK_1_RIGHT = '/';
 
 let nextCanvas = [];
@@ -36,7 +38,7 @@ for (let y = 0; y < ROW_COUNT; y += 1) {
     i += 1;
 
     nextCanvas[y][x] = canvas[y][x] =
-      Math.random() < 0.1 ? WATER : Math.random() < 0.4 ? EARTH : EMPTY;
+      Math.random() < 0.2 ? WATER : Math.random() < 0.2 ? EARTH : EMPTY;
 
     visited[y][x] = false;
   }
@@ -46,138 +48,20 @@ const pick = array => {
   return array[Math.floor(Math.random() * array.length)];
 };
 
-type Cell = 0 | string;
-type Neighborhood = [
-  [Cell, Cell, Cell],
-  [Cell, Cell, Cell],
-  [Cell, Cell, Cell]
-];
-type CellInput = 0 | string | ((cell: string, mainCell: string) => boolean);
-
-type RuleInput = [
-  [CellInput, CellInput, CellInput],
-  [CellInput, CellInput, CellInput],
-  [CellInput, CellInput, CellInput]
-];
-
-type CellOutput = 0 | string | ((cell: string, Neighborhood) => string);
-
-type RuleOutput = [
-  [CellOutput, CellOutput, CellOutput],
-  [CellOutput, CellOutput, CellOutput],
-  [CellOutput, CellOutput, CellOutput]
-];
-
-function makeRule(
-  ruleInput: RuleInput,
-  prob: number | ((cell: string, n: Neighborhood) => number),
-  ruleOutput: RuleOutput,
-) {
-  const visitorsToCheck = [];
-  for (let dx = -1; dx <= 1; dx += 1) {
-    for (let dy = -1; dy <= 1; dy += 1) {
-      const cellOutput = ruleOutput[dy + 1][dx + 1];
-      if (typeof cellOutput === 'function' || Boolean(cellOutput)) {
-        visitorsToCheck.push([dx, dy]);
-      }
-    }
-  }
-  const neighborhood: Neighborhood = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-  return function(x: number, y: number) {
-    for (const [dx, dy] of visitorsToCheck) {
-      const ox = x + dx;
-      const oy = y + dy;
-      if (ox < 0 || ox >= COL_COUNT || oy < 0 || oy >= ROW_COUNT) {
-        return false;
-      }
-      if (visited[oy][ox]) {
-        return false;
-      }
-    }
-
-    const cell = canvas[y][x];
-    for (let dx = -1; dx <= 1; dx += 1) {
-      for (let dy = -1; dy <= 1; dy += 1) {
-        const ox = x + dx;
-        const oy = y + dy;
-        const otherCell = (canvas[oy] || [])[ox];
-        neighborhood[dy + 1][dx + 1] = otherCell || EMPTY;
-
-        const cellMatcher = ruleInput[dy + 1][dx + 1];
-        if (!cellMatcher) {
-          continue;
-        }
-
-        switch (typeof cellMatcher) {
-          case 'string': {
-            if (!cellMatcher.includes(otherCell)) {
-              return false;
-            }
-            break;
-          }
-          case 'function': {
-            if (!cellMatcher(otherCell, cell)) {
-              return false;
-            }
-            break;
-          }
-          default: {
-            throw new TypeError('Malformed RuleInput');
-          }
-        }
-      }
-    }
-
-    switch (typeof prob) {
-      case 'number': {
-        if (Math.random() >= prob) {
-          return false;
-        }
-        break;
-      }
-      case 'function': {
-        if (Math.random() >= prob(cell, neighborhood)) {
-          return false;
-        }
-        break;
-      }
-      default: {
-        throw new TypeError('Invalid probability');
-      }
-    }
-
-    // If we got here, our probability hit!
-
-    // If we got here, it's a match!
-    for (let dx = -1; dx <= 1; dx += 1) {
-      for (let dy = -1; dy <= 1; dy += 1) {
-        const cellOutput = ruleOutput[dy + 1][dx + 1];
-        if (!cellOutput) {
-          continue;
-        }
-
-        const ox = x + dx;
-        const oy = y + dy;
-
-        canvas[oy][ox] =
-          typeof cellOutput === 'string'
-            ? cellOutput
-            : cellOutput(canvas[oy][ox], neighborhood);
-        visited[oy][ox] = true;
-      }
-    }
-    return true;
-  };
-}
-
 const GROWTHRATE = 0.01;
 const ROOT_GROWTHRATE = GROWTHRATE / 50;
 
-const CENTER = (_, n) => n[1][1];
-const LEFT = (_, n) => n[1][0];
-const RIGHT = (_, n) => n[1][2];
-const BELOW = (_, n) => n[2][1];
-const ABOVE = (_, n) => n[0][1];
+const $NE = (_, n) => n[0][0];
+const $N = (_, n) => n[0][1];
+const $NW = (_, n) => n[0][2];
+const $E = (_, n) => n[1][0];
+const $C = (_, n) => n[1][1];
+const $W = (_, n) => n[1][2];
+const $SE = (_, n) => n[2][0];
+const $S = (_, n) => n[2][1];
+const $SW = (_, n) => n[2][2];
+
+const makeRule = makeRuleMaker(COL_COUNT, ROW_COUNT, canvas, visited, EMPTY);
 
 function makeFall(densities) {
   const canFall = Object.keys(densities).join('');
@@ -193,8 +77,8 @@ function makeFall(densities) {
     1,
     [
       [0, 0, 0],
-      [0, BELOW, 0],
-      [0, CENTER, 0]
+      [0, $S, 0],
+      [0, $C, 0]
     ],
   );
 }
@@ -220,7 +104,7 @@ function makeFlow(viscocities) {
     prob,
     [
       [0, 0, 0],
-      [CENTER, LEFT, 0],
+      [$C, $E, 0],
       [0, 0, 0]
     ],
   );
@@ -234,7 +118,7 @@ function makeFlow(viscocities) {
     prob,
     [
       [0, 0, 0],
-      [0, RIGHT, CENTER],
+      [0, $W, $C],
       [0, 0, 0]
     ],
   );
@@ -264,8 +148,8 @@ const densities = {
   [EMPTY]: 0.01,
   [OIL]: 0.3,
   [WATER]: 0.5,
+  [MUD]: 0.8,
   [EARTH]: 0.8,
-  [MUD]: 0.6,
 };
 
 const GROWABLE = [
@@ -303,94 +187,252 @@ const STALKS_H = [
   STALK_1_HORIZ,
 ].join('');
 
-const rules = [
-  makeFall(densities),
-  makeFlow({
-    [OIL]: 0.3,
-    [WATER]: 0.1,
-    [VAPOR]: 0.01,
-    [EARTH]: 0.99,
-    [MUD]: 0.99,
-    [EMPTY]: 0.01,
-  }),
+let rules = [
+  // prettier-ignore
+  makeRule(
+    // Input
+    [
+      [0, 0, 0],
+      [0, '~@', 0],
+      [0, ' ', 0]
+    ],
+    1,
+    // Output
+    [
+      [0, 0, 0],
+      [0, ' ', 0],
+      [0, $C, 0]
+    ]
+  ),
+
+  // prettier-ignore
+  makeRule(
+    // Input
+    [
+      [0, 0, 0],
+      [0, '@', 0],
+      [0, '~', 0]],
+    1,
+    // Output
+    [
+      [0, 0, 0],
+      [0, '~', 0],
+      [0, '@', 0]
+    ]
+  ),
+
+  // prettier-ignore
+  makeRule(
+    // Input
+    [
+      [0, 0, 0],
+      ['^~@', '~', 0],
+      [0, '^ ', 0]
+    ],
+    0.5,
+    // Output
+    [
+      [0, 0, 0],
+      ['~', $E, 0],
+      [0, 0, 0]
+    ]
+  ),
+
+  // prettier-ignore
+  makeRule(
+    // Input
+    [
+      [0, 0, 0],
+      [0, '~', '^~@'],
+      [0, '^ ', 0]
+    ],
+    0.5,
+    // Output
+    [
+      [0, 0, 0],
+      [0, $W, '~'],
+      [0, 0, 0]
+    ]
+  ),
+
+  // prettier-ignore
   makeRule(
     [
       [0, 0, 0],
-      [0, WATER, 0],
+      [0, '~', 0],
       [0, 0, 0]
     ],
-    neighborhoodProbability(EMPTY, 0.0001),
+    0.01,
     [
       [0, 0, 0],
-      [0, VAPOR, 0],
+      [0, '.', 0],
       [0, 0, 0]
     ],
   ),
-  makeRule(
-    [
-      [0, 0, 0],
-      [0, VAPOR, 0],
-      [0, 0, 0]
-    ],
-    neighborhoodProbability(VAPOR, 0.0001),
-    [
-      [0, 0, 0],
-      [0, WATER, 0],
-      [0, 0, 0]
-    ],
-  ),
-  makeRule(
-    [
-      [0, 0, 0],
-      [0, EARTH, 0],
-      [0, 0, 0]
-    ],
-    neighborhoodProbability(WATER, 0.001),
-    [
-      [0, 0, 0],
-      [0, MUD, 0],
-      [0, 0, 0]
-    ],
-  ),
-  makeRule(
-    [
-      [0, MUD, 0],
-      [0, EARTH, 0],
-      [0, 0, 0]
-    ],
-    ROOT_GROWTHRATE,
-    [
-      [0, MUD, 0],
-      [0, ROOT, 0],
-      [0, 0, 0]
-    ],
-  ),
-  makeRule(
-    [
-      [0, [MUD, EARTH, WATER, STALKS].join(''), 0],
-      [0, GROWABLE, 0],
-      [0, 0, 0]
-    ],
-    GROWTHRATE,
-    [
-      [0, (c => STALKS[STALKS.indexOf(c) - 1] || STALK_1), 0],
-      [0, c => STALKS[STALKS.indexOf(c) + 1], 0],
-      [0, 0, 0]
-    ],
-  ),
-  makeRule(
-    [
-      [EMPTY, EMPTY, 0],
-      [[EMPTY, MUD, EARTH, WATER, STALKS].join(''), GROWABLE, 0],
-      [0, 0, 0]
-    ],
-    GROWTHRATE / 2,
-    [
-      [0, 0, 0],
-      [(c => STALKS_H[STALKS_H.indexOf(c) - 1] || STALK_1_HORIZ), c => STALKS_H[STALKS_H.indexOf(c) + 1], 0],
-      [0, 0, 0]
-    ],
-  ),
+
+  // makeRule(
+  //   // Input
+  //   [
+  //     [0,0,0],
+  //     [0,'~@',' '],
+  //     [0,'~@',0]
+  //   ],
+  //   0.5,
+  //   // Output
+  //   [
+  //     [0,0,0],
+  //     [0,' ',$C],
+  //     [0,0,0],
+  //   ]
+  // ),
+
+  // makeRule(
+  //   // Input
+  //   [
+  //     [0,0,0],
+  //     [' ','~@',0],
+  //     [0,'~@',0]
+  //   ],
+  //   0.5,
+  //   // Output
+  //   [
+  //     [0,0,0],
+  //     [$C,' ',0],
+  //     [0,0,0],
+  //   ]
+  // ),
+  // makeRule(
+  //   // Input
+  //   [
+  //     [0,0,0],
+  //     [0,'@',0],
+  //     [0,'~',0]
+  //   ],
+  //   1,
+  //   // Output
+  //   [
+  //     [0,0,0],
+  //     [0,'~',0],
+  //     [0,'@',0],
+  //   ]
+  // ),
+  // makeRule(
+  //   // Input
+  //   [
+  //     [0,0,0],
+  //     ['~','@',0],
+  //     [0,0,0]
+  //   ],
+  //   1,
+  //   // Output
+  //   [
+  //     [0,0,0],
+  //     ['@','~',0],
+  //     [0,0,0],
+  //   ]
+  // ),
+  // makeRule(
+  //   // Input
+  //   [
+  //     [0,0,0],
+  //     [0,'@','~'],
+  //     [0,0,0]
+  //   ],
+  //   1,
+  //   // Output
+  //   [
+  //     [0,0,0],
+  //     [0,'~','@'],
+  //     [0,0,0],
+  //   ]
+  // ),
+  // makeFall(densities),
+  // makeFlow({
+  //   [OIL]: 0.3,
+  //   [WATER]: 0.1,
+  //   [VAPOR]: 0.01,
+  //   [EARTH]: 0.99,
+  //   [MUD]: 0.99,
+  //   [EMPTY]: 0.01,
+  // }),
+  // makeRule(
+  //   [
+  //     [0, 0, 0],
+  //     [0, WATER, 0],
+  //     [0, 0, 0]
+  //   ],
+  //   neighborhoodProbability(EMPTY, 0.0001),
+  //   [
+  //     [0, 0, 0],
+  //     [0, VAPOR, 0],
+  //     [0, 0, 0]
+  //   ],
+  // ),
+  // makeRule(
+  //   [
+  //     [0, 0, 0],
+  //     [0, VAPOR, 0],
+  //     [0, 0, 0]
+  //   ],
+  //   neighborhoodProbability(VAPOR, 0.0001),
+  //   [
+  //     [0, 0, 0],
+  //     [0, WATER, 0],
+  //     [0, 0, 0]
+  //   ],
+  // ),
+  // makeRule(
+  //   [
+  //     [0, 0, 0],
+  //     [0, EARTH, 0],
+  //     [0, 0, 0]
+  //   ],
+  //   neighborhoodProbability(WATER, 0.001),
+  //   [
+  //     [0, 0, 0],
+  //     [0, MUD, 0],
+  //     [0, 0, 0]
+  //   ],
+  // ),
+  // makeRule(
+  //   [
+  //     [0, MUD, 0],
+  //     [0, EARTH, 0],
+  //     [0, 0, 0]
+  //   ],
+  //   ROOT_GROWTHRATE,
+  //   [
+  //     [0, MUD, 0],
+  //     [0, ROOT, 0],
+  //     [0, 0, 0]
+  //   ],
+  // ),
+  // makeRule(
+  //   [
+  //     [0, [MUD, EARTH, WATER, STALKS].join(''), 0],
+  //     [0, GROWABLE, 0],
+  //     [0, 0, 0]
+  //   ],
+  //   GROWTHRATE,
+  //   [
+  //     [0, (c => STALKS[STALKS.indexOf(c) - 1] || STALK_1), 0],
+  //     [0, c => STALKS[STALKS.indexOf(c) + 1], 0],
+  //     [0, 0, 0]
+  //   ],
+  // ),
+  // makeRule(
+  //   [
+  //     [EMPTY, EMPTY, 0],
+  //     [[EMPTY, MUD, EARTH, WATER, STALKS].join(''), GROWABLE, 0],
+  //     [0, 0, 0]
+  //   ],
+  //   GROWTHRATE / 2,
+  //   [
+  //     [0, 0, 0],
+  //     [(c => STALKS_H[STALKS_H.indexOf(c) - 1] || STALK_1_HORIZ), c => STALKS_H[STALKS_H.indexOf(c) + 1], 0],
+  //     [0, 0, 0]
+  //   ],
+  // ),
 ];
 
 let needsRender = true;
@@ -401,8 +443,9 @@ const simulate = () => {
     }
   }
   coords = shuffle(coords);
+  // rules = shuffle(rules);
   for (const [x, y] of coords) {
-    for (const rule of rules) {
+    for (const rule of shuffle(rules)) {
       rule(x, y);
     }
   }
@@ -419,7 +462,9 @@ const render = () => {
   requestAnimationFrame(render);
 };
 
-let stepMS = 1000;
+document.onclick = simulate;
+
+let stepMS = 10000;
 let interval = setInterval(simulate, Math.sqrt(stepMS));
 document.getElementById('stepMS').value = '' + stepMS;
 document.getElementById('stepMS').addEventListener('change', e => {
