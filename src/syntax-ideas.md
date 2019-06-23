@@ -50,7 +50,7 @@ JSON representation
 {
   layers: [
     {
-      order: ' .~@98765432┃│┆',
+      order: [' ','.','~','@','9','8','7','6','5','4','3','2','|'],
       traits: {
         density: {
           '.': 0.01,
