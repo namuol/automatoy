@@ -104,7 +104,7 @@ function fillWith(canvas: string[][], cell: string) {
 
 // TODO:
 type Context = any;
-type CompiledRule = (ctx: Context, x: number, y: number) => void;
+type CompiledRule = (ctx: Context, x: number, y: number) => boolean;
 
 function alwaysTrue() {
   return true;
@@ -212,7 +212,11 @@ function compileRule(rule: Rule): CompiledRule {
         [0, 2]
       ];
       writerCoords = matcherCoords;
-      getters = {};
+      getters = {
+        $N: get(0),
+        $C: get(1),
+        $S: get(2),
+      };
     }
 
     // Symmetric horizontal:
@@ -249,6 +253,7 @@ function compileRule(rule: Rule): CompiledRule {
       throw new TypeError('Invalid matcher');
     }
 
+    const newCells = [];
     return (ctx: Context, x: number, y: number) => {
       if (allDeltas) {
         const i = Math.random() < 0.5 ? 0 : 1;
@@ -258,8 +263,8 @@ function compileRule(rule: Rule): CompiledRule {
         getters = allGetters[i];
       }
 
-      ctx.deltas = deltas;
-      ctx.matcherCoords = matcherCoords;
+      // ctx.deltas = deltas;
+      // ctx.matcherCoords = matcherCoords;
       ctx.x = x;
       ctx.y = y;
       ctx.getters = getters;
@@ -267,7 +272,8 @@ function compileRule(rule: Rule): CompiledRule {
       for (let i = 0; i < deltas.length; i += 1) {
         const [mx, my] = matcherCoords[i];
         const cellMatcher = matcher[my][mx];
-        if (!cellMatcher) {
+        const cellWriter = writer[my][mx];
+        if (!cellMatcher && !cellWriter) {
           continue;
         }
 
@@ -284,6 +290,18 @@ function compileRule(rule: Rule): CompiledRule {
         if (ctx.tick === ctx.visited[oy][ox]) {
           return false;
         }
+      }
+
+      for (let i = 0; i < deltas.length; i += 1) {
+        const [mx, my] = matcherCoords[i];
+        const cellMatcher = matcher[my][mx];
+        if (!cellMatcher) {
+          continue;
+        }
+
+        const [dx, dy] = deltas[i];
+        const ox = x + dx;
+        const oy = y + dy;
 
         const otherCell = ctx.canvas[oy][ox];
         switch (typeof cellMatcher) {
@@ -306,19 +324,22 @@ function compileRule(rule: Rule): CompiledRule {
       for (let i = 0; i < deltas.length; i += 1) {
         const [wx, wy] = writerCoords[i];
         let newCell = writer[wy][wx];
-        if (newCell === 0) {
-          continue;
-        }
 
         if (newCell[0] === '$') {
-          newCell = eval(`with(ctx) { ${newCell} }`);
+          newCell = ctx[newCell];
         }
+        newCells[i] = newCell;
+      }
 
+      for (let i = 0; i < deltas.length; i += 1) {
+        if (newCells[i] === 0) {
+          continue;
+        }
         const [dx, dy] = deltas[i];
         const ox = x + dx;
         const oy = y + dy;
 
-        ctx.canvas[oy][ox] = newCell;
+        ctx.canvas[oy][ox] = newCells[i];
         ctx.visited[oy][ox] = ctx.tick;
       }
       return true;
@@ -421,7 +442,9 @@ export function makeSimulator(
       ctx.visited = visited;
       for (const [x, y] of coords) {
         for (const rule of layer.compiledRules) {
-          rule(ctx, x, y);
+          if (rule(ctx, x, y)) {
+            break;
+          }
         }
       }
       i += 1;

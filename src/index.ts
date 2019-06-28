@@ -8,68 +8,60 @@ const sim = makeSimulator(
         traits: {
           viscocity: {
             ' ': 0,
-            '~': 0.1,
+            '.': 0,
+            '~': 0.3,
+            '@': 0.9,
             DEFAULT: 1,
+          },
+          density: {
+            ' ': 0,
+            '.': -0.1,
+            '~': 0.4,
+            '@': 0.6,
+            DEFAULT: 0,
           },
         },
         // prettier-ignore
         rules: [
           // Simple transformation:
-          // [
-          //   '~',
-          //   '.',
-          //   [0.01]
-          // ],
-          // Simple falling:
+          [
+            '~',
+            '.',
+            [0.0001]
+          ],
+          // Generalized falling:
           [
             // First arg is matcher
             [
               [0],
-              ['~'],
-              [' '],
+              [0],
+              [0],
             ],
             // Second arg is output
             [
               [0],
-              [' '],
-              ['~'],
+              ['$S'],
+              ['$C'],
             ],
+            [
+              'density[$C] > density[$S]'
+            ]
           ],
           [
             // First arg is matcher
             [
-              [' ', '~'],
+              [0, 0],
             ],
             // Second arg is output
             [
-              ['~', ' '],
+              ['$B', '$A'],
             ],
             [
+              '$A !== $B',
               'viscocity[$A] <= viscocity[$B]',
               '1 - viscocity[$B]'
             ]
           ],
-          // Generalized falling:
-          // [
-          //   // First arg is matcher
-          //   [
-          //     [0],
-          //     [0],
-          //     [0],
-          //   ],
-          //   // Second arg is output
-          //   [
-          //     ['*'],
-          //     ['$S'],
-          //     ['$C'],
-          //   ],
-          //   // Last arg is (probabilistic) conditions
-          //   [
-          //     // F--- it, let's just `eval`:
-          //     '1 - viscocity[$C]',
-          //     'density[$C] > density[$S]',
-          //   ]
-          // ],
         ]
       },
     ],
@@ -81,8 +73,10 @@ const sim = makeSimulator(
 for (let y = 0; y < sim.layers[0].canvas.length; y += 1) {
   for (let x = 0; x < sim.layers[0].canvas[0].length; x += 1) {
     // For now I'm just mutating this
-    if (Math.random() < 0.1) {
+    if (Math.random() < 0.2) {
       sim.layers[0].canvas[y][x] = '~';
+    } else if (Math.random() < 0.2) {
+      sim.layers[0].canvas[y][x] = '@';
     }
   }
 }
