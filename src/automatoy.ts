@@ -115,12 +115,23 @@ function compileConditions(conditions?: Condition[]) {
     return alwaysTrue;
   }
 
+  const finalConditions = [];
+
+  for (let i = 0; i < conditions.length; i += 1) {
+    const condition = conditions[i];
+    if (typeof condition === 'string') {
+      finalConditions[i] = new Function('ctx', `with (ctx) {return ${condition};}`);
+    } else {
+      finalConditions[i] = condition;
+    }
+  }
+
   return (ctx: Context, x: number, y: number) => {
-    for (let condition of conditions) {
+    for (let condition of finalConditions) {
       switch (typeof condition) {
-        case 'string': {
+        case 'function': {
           // yee haw 🤠
-          condition = eval(`with(ctx){ ${condition} }`);
+          condition = condition(ctx);
         }
         case 'boolean':
         case 'number': {
@@ -137,7 +148,8 @@ function compileConditions(conditions?: Condition[]) {
         }
 
         default: {
-          throw new TypeError('Invalid probability');
+          return true;
+          throw new TypeError('Invalid probability' + typeof condition);
         }
       }
     }
@@ -391,6 +403,8 @@ export function makeSimulator(
     height,
     tick: true,
     getters: null,
+    x: 0,
+    y: 0,
     get $A() {
       return ctx.getters.$A(ctx);
     },
@@ -424,6 +438,18 @@ export function makeSimulator(
     get $SE() {
       return ctx.getters.$SE(ctx);
     },
+    COUNT: (cell) => {
+      const {x, y} = ctx;
+      let count = 0;
+      for (let dx = -1; dx <= 1; dx += 1) {
+        for (let dy = -1; dy <= 1; dy += 1) {
+          if (ctx.canvas[y + dy] && ctx.canvas[y + dy][x + dx] === cell) {
+            count += 1;
+          }
+        }
+      }
+      return count;
+    }
   };
   const step = () => {
     ctx.tick = !ctx.tick;
@@ -441,6 +467,8 @@ export function makeSimulator(
       ctx.canvas = canvas;
       ctx.visited = visited;
       for (const [x, y] of coords) {
+        ctx.x = x;
+        ctx.y = y;
         for (const rule of layer.compiledRules) {
           if (rule(ctx, x, y)) {
             break;

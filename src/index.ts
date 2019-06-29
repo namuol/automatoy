@@ -10,7 +10,7 @@ const sim = makeSimulator(
             ' ': 0,
             '.': 0,
             '~': 0.3,
-            '@': 0.9,
+            '@': 0.99,
             DEFAULT: 1,
           },
           density: {
@@ -27,7 +27,12 @@ const sim = makeSimulator(
           [
             '~',
             '.',
-            [0.0001]
+            ['COUNT(" ") * 0.0005']
+          ],
+          [
+            '.',
+            '~',
+            ['COUNT(".") * 0.0005']
           ],
           // Generalized falling:
           [
@@ -66,8 +71,8 @@ const sim = makeSimulator(
       },
     ],
   },
-  30,
-  30
+  10,
+  10
 );
 
 for (let y = 0; y < sim.layers[0].canvas.length; y += 1) {
