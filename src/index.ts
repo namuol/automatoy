@@ -4,36 +4,41 @@ const sim = makeSimulator(
   {
     layers: [
       {
-        order: [' ', '.', '~', '@'],
+        order: [' ', '.', '~', 'D', 'm', '!'],
         traits: {
           viscocity: {
             ' ': 0,
-            '.': 0,
+            '.': 0.1,
             '~': 0.3,
-            '@': 0.99,
+            m: 0.9,
+            D: 0.99,
             DEFAULT: 1,
           },
           density: {
             ' ': 0,
             '.': -0.1,
             '~': 0.4,
-            '@': 0.6,
-            DEFAULT: 0,
+            m: 0.5,
+            D: 0.6,
+            DEFAULT: 0.5,
           },
         },
         // prettier-ignore
         rules: [
-          // Simple transformation:
+          // Water evaporation:
           [
             '~',
             '.',
             ['COUNT(" ") * 0.0005']
           ],
+
+          // Vapor condensation:
           [
             '.',
             '~',
             ['COUNT(".") * 0.0005']
           ],
+
           // Generalized falling:
           [
             // First arg is matcher
@@ -48,10 +53,13 @@ const sim = makeSimulator(
               ['$S'],
               ['$C'],
             ],
+
+            // Cells that are denser swap places with what's below them
             [
               'density[$C] > density[$S]'
             ]
           ],
+
           [
             // First arg is matcher
             [
@@ -67,12 +75,37 @@ const sim = makeSimulator(
               '1 - viscocity[$B]'
             ]
           ],
+          
+          // Mud forming
+          [
+            'D',
+            'm',
+            ['COUNT("~") * 0.0001']
+          ],
+          
+          // "Sprouting"
+          [
+            // First arg is matcher
+            [
+              [0],
+              ['m'],
+              ['D'],
+            ],
+            // Second arg is output
+            [
+              [0],
+              ['!'],
+              ['D'],
+            ],
+
+            [0.0001]
+          ],
         ]
       },
     ],
   },
-  10,
-  10
+  30,
+  30
 );
 
 for (let y = 0; y < sim.layers[0].canvas.length; y += 1) {
@@ -81,7 +114,7 @@ for (let y = 0; y < sim.layers[0].canvas.length; y += 1) {
     if (Math.random() < 0.2) {
       sim.layers[0].canvas[y][x] = '~';
     } else if (Math.random() < 0.2) {
-      sim.layers[0].canvas[y][x] = '@';
+      sim.layers[0].canvas[y][x] = 'D';
     }
   }
 }

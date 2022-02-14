@@ -120,7 +120,10 @@ function compileConditions(conditions?: Condition[]) {
   for (let i = 0; i < conditions.length; i += 1) {
     const condition = conditions[i];
     if (typeof condition === 'string') {
-      finalConditions[i] = new Function('ctx', `with (ctx) {return ${condition};}`);
+      finalConditions[i] = new Function(
+        'ctx',
+        `with (ctx) {return ${condition};}`
+      );
     } else {
       finalConditions[i] = condition;
     }
@@ -164,208 +167,243 @@ const pick = array => {
   return array[pickIndex(array.length)];
 };
 
-function compileRule(rule: Rule): CompiledRule {
-  const [matcher, writer, conditions] = rule;
-  const condition = compileConditions(conditions);
-  if (typeof matcher === 'string' && typeof writer === 'string') {
-    return (ctx: Context, x: number, y: number) => {
-      const cell = ctx.canvas[y][x];
-      if (cell !== matcher || !condition(ctx, x, y)) {
-        return false;
-      }
+const matchers = {};
 
-      ctx.canvas[y][x] = writer;
-      return true;
-    };
+function makeMatches(matcherStr) {
+  if (matchers[matcherStr]) {
+    return matchers[matcherStr];
   }
 
-  if (Array.isArray(matcher)) {
-    const w = matcher[0].length;
-    const h = matcher.length;
-    let deltas = null;
-    let allDeltas = null;
+  let negate = false;
+  let finalMatcherStr = matcherStr;
+  if (matcherStr[0] === '^') {
+    negate = true;
+    finalMatcherStr = matcherStr.substr(1);
+  }
 
-    let matcherCoords = null;
-    let allMatcherCoords = null;
-
-    let writerCoords = null;
-    let allWriterCoords = null;
-
-    let getters = null;
-    let allGetters = null;
-
-    const get = i => ctx => {
-      const [dx, dy] = deltas[i];
-      const ox = ctx.x + dx;
-      if (ox < 0 || ox >= ctx.width) {
-        // TODO: Find a better way to specify an "out of bounds" symbol:
-        return ctx.layer.order[0];
+  return matchers[matcherStr] = cell => {
+    for (let cellToMatch of matcherStr) {
+      if (cellToMatch === cell) {
+        return !negate;
       }
-      const oy = ctx.y + dy;
-      if (oy < 0 || oy >= ctx.height) {
-        // TODO: Find a better way to specify an "out of bounds" symbol:
-        return ctx.layer.order[0];
-      }
+    }
 
-      return ctx.canvas[oy][ox];
-    };
+    return negate;
+  };
+}
 
-    // Vertical pillar:
-    // prettier-ignore
-    if (w === 1 && h === 3) {
-      deltas = [
-        [0, -1],
-        [0, 0],
-        [0, 1]
-      ];
-      matcherCoords = [
-        [0, 0],
-        [0, 1],
-        [0, 2]
-      ];
-      writerCoords = matcherCoords;
-      getters = {
-        $N: get(0),
-        $C: get(1),
-        $S: get(2),
+const compileRule = (layer: Layer) => {
+  const validCells = layer.order.reduce((r, cell) => {
+    r[cell] = true;
+    return r;
+  }, {});
+
+  return (rule: Rule): CompiledRule => {
+    let [matcher, writer, conditions] = rule;
+    const condition = compileConditions(conditions);
+
+    if (typeof matcher === 'string' && typeof writer === 'string') {
+      const matches = makeMatches(matcher);
+      return (ctx: Context, x: number, y: number) => {
+        const cell = ctx.canvas[y][x];
+        if (!matches(cell) || !condition(ctx, x, y)) {
+          return false;
+        }
+
+        ctx.canvas[y][x] = writer;
+        return true;
       };
     }
 
-    // Symmetric horizontal:
-    // prettier-ignore
-    if (w === 2 && h === 1) {
-      allDeltas = [
-        [[-1, 0], [0, 0]],
-        [[0, 0], [1, 0]]
-      ];
-      allMatcherCoords = [
-        [[0, 0], [1, 0]],
-        [[1, 0], [0, 0]]
-      ];
-      allWriterCoords = allMatcherCoords;
+    if (Array.isArray(matcher)) {
+      const w = matcher[0].length;
+      const h = matcher.length;
+      let deltas = null;
+      let allDeltas = null;
 
-      allGetters = [
-        {
-          $A: get(0),
-          $B: get(1),
-        },
-        {
-          $A: get(1),
-          $B: get(0),
-        },
-      ];
-    }
+      let matcherCoords = null;
+      let allMatcherCoords = null;
 
-    if (
-      (!deltas && !allDeltas) ||
-      (!writerCoords && !allWriterCoords) ||
-      (!matcherCoords && !allMatcherCoords) ||
-      (!getters && !allGetters)
-    ) {
-      throw new TypeError('Invalid matcher');
-    }
+      let writerCoords = null;
+      let allWriterCoords = null;
 
-    const newCells = [];
-    return (ctx: Context, x: number, y: number) => {
-      if (allDeltas) {
-        const i = Math.random() < 0.5 ? 0 : 1;
-        deltas = allDeltas[i];
-        matcherCoords = allMatcherCoords[i];
-        writerCoords = allWriterCoords[i];
-        getters = allGetters[i];
-      }
+      let getters = null;
+      let allGetters = null;
 
-      // ctx.deltas = deltas;
-      // ctx.matcherCoords = matcherCoords;
-      ctx.x = x;
-      ctx.y = y;
-      ctx.getters = getters;
-
-      for (let i = 0; i < deltas.length; i += 1) {
-        const [mx, my] = matcherCoords[i];
-        const cellMatcher = matcher[my][mx];
-        const cellWriter = writer[my][mx];
-        if (!cellMatcher && !cellWriter) {
-          continue;
-        }
-
+      const get = i => ctx => {
         const [dx, dy] = deltas[i];
-        const ox = x + dx;
+        const ox = ctx.x + dx;
         if (ox < 0 || ox >= ctx.width) {
-          return false;
+          // TODO: Find a better way to specify an "out of bounds" symbol:
+          return ctx.layer.order[0];
         }
-        const oy = y + dy;
+        const oy = ctx.y + dy;
         if (oy < 0 || oy >= ctx.height) {
+          // TODO: Find a better way to specify an "out of bounds" symbol:
+          return ctx.layer.order[0];
+        }
+
+        return ctx.canvas[oy][ox];
+      };
+
+      // Vertical pillar:
+      // prettier-ignore
+      if (w === 1 && h === 3) {
+        deltas = [
+          [0, -1],
+          [0, 0],
+          [0, 1]
+        ];
+        matcherCoords = [
+          [0, 0],
+          [0, 1],
+          [0, 2]
+        ];
+        writerCoords = matcherCoords;
+        getters = {
+          $N: get(0),
+          $C: get(1),
+          $S: get(2),
+        };
+      }
+
+      // Symmetric horizontal:
+      // prettier-ignore
+      if (w === 2 && h === 1) {
+        allDeltas = [
+          [[-1, 0], [0, 0]],
+          [[0, 0], [1, 0]]
+        ];
+        allMatcherCoords = [
+          [[0, 0], [1, 0]],
+          [[1, 0], [0, 0]]
+        ];
+        allWriterCoords = allMatcherCoords;
+
+        allGetters = [
+          {
+            $A: get(0),
+            $B: get(1),
+          },
+          {
+            $A: get(1),
+            $B: get(0),
+          },
+        ];
+      }
+
+      if (
+        (!deltas && !allDeltas) ||
+        (!writerCoords && !allWriterCoords) ||
+        (!matcherCoords && !allMatcherCoords) ||
+        (!getters && !allGetters)
+      ) {
+        throw new TypeError('Invalid matcher');
+      }
+
+      const newCells = [];
+      return (ctx: Context, x: number, y: number) => {
+        if (allDeltas) {
+          const i = Math.random() < 0.5 ? 0 : 1;
+          deltas = allDeltas[i];
+          matcherCoords = allMatcherCoords[i];
+          writerCoords = allWriterCoords[i];
+          getters = allGetters[i];
+        }
+
+        // ctx.deltas = deltas;
+        // ctx.matcherCoords = matcherCoords;
+        ctx.x = x;
+        ctx.y = y;
+        ctx.getters = getters;
+
+        for (let i = 0; i < deltas.length; i += 1) {
+          const [mx, my] = matcherCoords[i];
+          const cellMatcher = matcher[my][mx];
+          const cellWriter = writer[my][mx];
+          if (!cellMatcher && !cellWriter) {
+            continue;
+          }
+
+          const [dx, dy] = deltas[i];
+          const ox = x + dx;
+          if (ox < 0 || ox >= ctx.width) {
+            return false;
+          }
+          const oy = y + dy;
+          if (oy < 0 || oy >= ctx.height) {
+            return false;
+          }
+
+          if (ctx.tick === ctx.visited[oy][ox]) {
+            return false;
+          }
+        }
+
+        for (let i = 0; i < deltas.length; i += 1) {
+          const [mx, my] = matcherCoords[i];
+          const cellMatcher = matcher[my][mx];
+          if (!cellMatcher) {
+            continue;
+          }
+          const matches = makeMatches(cellMatcher);
+          const [dx, dy] = deltas[i];
+          const ox = x + dx;
+          const oy = y + dy;
+
+          const otherCell = ctx.canvas[oy][ox];
+          if (!matches(otherCell)) {
+            return false;
+          }
+        }
+
+        if (!condition(ctx, x, y)) {
           return false;
         }
 
-        if (ctx.tick === ctx.visited[oy][ox]) {
-          return false;
-        }
-      }
+        for (let i = 0; i < deltas.length; i += 1) {
+          const [wx, wy] = writerCoords[i];
+          let newCell = writer[wy][wx];
 
-      for (let i = 0; i < deltas.length; i += 1) {
-        const [mx, my] = matcherCoords[i];
-        const cellMatcher = matcher[my][mx];
-        if (!cellMatcher) {
-          continue;
-        }
-
-        const [dx, dy] = deltas[i];
-        const ox = x + dx;
-        const oy = y + dy;
-
-        const otherCell = ctx.canvas[oy][ox];
-        switch (typeof cellMatcher) {
-          case 'string': {
-            if (cellMatcher !== otherCell) {
-              return false;
-            }
-            break;
+          if (newCell[0] === '$') {
+            newCell = ctx[newCell];
           }
-          default: {
-            throw new TypeError('Malformed matcher');
+          newCells[i] = newCell;
+        }
+
+        for (let i = 0; i < deltas.length; i += 1) {
+          if (newCells[i] === 0) {
+            continue;
           }
+          const [dx, dy] = deltas[i];
+          const ox = x + dx;
+          const oy = y + dy;
+
+          ctx.canvas[oy][ox] = newCells[i];
+          ctx.visited[oy][ox] = ctx.tick;
         }
-      }
+        return true;
+      };
+    }
 
-      if (!condition(ctx, x, y)) {
-        return false;
-      }
-
-      for (let i = 0; i < deltas.length; i += 1) {
-        const [wx, wy] = writerCoords[i];
-        let newCell = writer[wy][wx];
-
-        if (newCell[0] === '$') {
-          newCell = ctx[newCell];
-        }
-        newCells[i] = newCell;
-      }
-
-      for (let i = 0; i < deltas.length; i += 1) {
-        if (newCells[i] === 0) {
-          continue;
-        }
-        const [dx, dy] = deltas[i];
-        const ox = x + dx;
-        const oy = y + dy;
-
-        ctx.canvas[oy][ox] = newCells[i];
-        ctx.visited[oy][ox] = ctx.tick;
-      }
-      return true;
-    };
-  }
-
-  throw new Error('Not implemented or invalid format');
-}
+    throw new Error('Not implemented or invalid format');
+  };
+};
 
 export function makeSimulator(
   config: SimConfig,
   width: number,
   height: number
 ): Simulator {
+  for (const layer of config.layers) {
+    for (const traitName in layer.traits) {
+      const trait = layer.traits[traitName];
+      for (const cell of layer.order) {
+        trait[cell] = trait[cell] == null ? trait.DEFAULT : trait[cell];
+      }
+    }
+  }
+
   const layers = config.layers.map(layer => {
     const canvas = [];
     const visited = [];
@@ -383,7 +421,7 @@ export function makeSimulator(
 
   // "Compile" all our rules:
   for (const layer of config.layers) {
-    layer.compiledRules = layer.rules.map(compileRule);
+    layer.compiledRules = layer.rules.map(compileRule(layer));
   }
 
   let coords = [];
@@ -438,18 +476,23 @@ export function makeSimulator(
     get $SE() {
       return ctx.getters.$SE(ctx);
     },
-    COUNT: (cell) => {
-      const {x, y} = ctx;
+    COUNT: matcher => {
+      const matches = makeMatches(matcher);
+      const { x, y } = ctx;
       let count = 0;
       for (let dx = -1; dx <= 1; dx += 1) {
         for (let dy = -1; dy <= 1; dy += 1) {
-          if (ctx.canvas[y + dy] && ctx.canvas[y + dy][x + dx] === cell) {
+          if (!ctx.canvas[y + dy]) {
+            continue;
+          }
+
+          if (matches(ctx.canvas[y + dy][x + dx])) {
             count += 1;
           }
         }
       }
       return count;
-    }
+    },
   };
   const step = () => {
     ctx.tick = !ctx.tick;
